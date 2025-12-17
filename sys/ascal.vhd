@@ -2290,7 +2290,8 @@ BEGIN
 					o_acpt<=(o_acpt+1) MOD 16;
 					IF shift_onext(o_acpt,o_format) THEN
 						-- Wrap within correct half-buffer based on synchronized buffer indicator
-						-- Read from buffer opposite to what Avalon is writing
+						-- Use NOT o_read_buf because we read from opposite buffer of what Avalon writes
+						-- (if Avalon writes to buffer 0, we read from buffer 1, and vice versa)
 						o_ad<=wrap_half_buffer(o_ad, NOT o_read_buf);
 					END IF;
 					o_pshift<=o_pshift-1;
@@ -2334,7 +2335,8 @@ BEGIN
 
 						IF shift_onext(o_acpt,o_format) THEN
 							-- Wrap within correct half-buffer based on synchronized buffer indicator
-							-- Read from buffer opposite to what Avalon is writing
+							-- Use NOT o_read_buf because we read from opposite buffer of what Avalon writes
+							-- (if Avalon writes to buffer 0, we read from buffer 1, and vice versa)
 							o_ad<=wrap_half_buffer(o_ad, NOT o_read_buf);
 						END IF;
 
