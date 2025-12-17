@@ -1825,7 +1825,7 @@ BEGIN
 
 	-- Wrap within half-buffer boundaries for ping-pong operation
 	-- Keep address within the same half (0-1023 or 1024-2047)
-	avl_rad_c<=(avl_rad/1024)*1024 + ((avl_rad MOD 1024)+1) MOD 1024
+	avl_rad_c<=(avl_rad/(O_FIFO_SIZE/2))*(O_FIFO_SIZE/2) + ((avl_rad MOD (O_FIFO_SIZE/2))+1) MOD (O_FIFO_SIZE/2)
 					WHEN avl_write_i='1' AND avl_waitrequest='0' ELSE avl_rad;
 
 	-----------------------------------------------------------------------------
@@ -2240,7 +2240,7 @@ BEGIN
 					o_acpt<=(o_acpt+1) MOD 16;
 					IF shift_onext(o_acpt,o_format) THEN
 						-- Wrap within half-buffer boundaries (0-1023 or 1024-2047)
-						o_ad<=(o_ad/1024)*1024 + ((o_ad MOD 1024)+1) MOD 1024;
+						o_ad<=(o_ad/(O_FIFO_SIZE/2))*(O_FIFO_SIZE/2) + ((o_ad MOD (O_FIFO_SIZE/2))+1) MOD (O_FIFO_SIZE/2);
 					END IF;
 					o_pshift<=o_pshift-1;
 					IF o_pshift=0 THEN
@@ -2283,7 +2283,7 @@ BEGIN
 
 						IF shift_onext(o_acpt,o_format) THEN
 							-- Wrap within half-buffer boundaries (0-1023 or 1024-2047)
-							o_ad<=(o_ad/1024)*1024 + ((o_ad MOD 1024)+1) MOD 1024;
+							o_ad<=(o_ad/(O_FIFO_SIZE/2))*(O_FIFO_SIZE/2) + ((o_ad MOD (O_FIFO_SIZE/2))+1) MOD (O_FIFO_SIZE/2);
 						END IF;
 
 						IF o_adturn='1' AND (shift_onext((o_acpt+1) MOD 16,o_format)) AND
