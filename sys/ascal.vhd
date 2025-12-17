@@ -1661,7 +1661,8 @@ BEGIN
 		END IF;
 	END PROCESS;
 
-	avl_dr<=i_dpram(avl_rad_c) WHEN rising_edge(avl_clk);
+	-- Map avl_rad_c (0-2047) to i_dpram address space (0-31)
+	avl_dr<=i_dpram(avl_rad_c MOD (BLEN*2)) WHEN rising_edge(avl_clk);
 
 	-- Line buffer for downscaling with interpolation
 	DownLine:IF DOWNSCALE GENERATE
@@ -1834,9 +1835,9 @@ BEGIN
 	avl_burstcount<=std_logic_vector(to_unsigned(BLEN,8));
 	avl_byteenable<=(OTHERS =>'1');
 
-	-- Wrap within half-buffer boundaries for ping-pong operation
-	-- Keep address within the same half (0-1023 or 1024-2047)
-	avl_rad_c<=wrap_half_buffer(avl_rad)
+	-- Increment avl_rad for next read from i_dpram
+	-- avl_rad stays in full range (0-2047) to track buffer state
+	avl_rad_c<=(avl_rad + 1) MOD O_FIFO_SIZE
 					WHEN avl_write_i='1' AND avl_waitrequest='0' ELSE avl_rad;
 
 	-----------------------------------------------------------------------------
