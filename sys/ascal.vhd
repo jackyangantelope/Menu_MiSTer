@@ -325,6 +325,7 @@ ARCHITECTURE rtl OF ascal IS
 	CONSTANT NB_BURST : natural :=ilog2(N_BURST);
 	CONSTANT NB_LA    : natural :=ilog2(N_DW/8); -- Low address bits
 	CONSTANT BLEN     : natural :=N_BURST / N_DW * 8; -- Burst length
+	CONSTANT O_FIFO_SIZE : natural := 2048; -- Large circular FIFO size (32KB for 128-bit width)
 
 	----------------------------------------------------------
 	TYPE arr_dw IS  ARRAY (natural RANGE <>) OF unsigned(N_DW-1 DOWNTO 0);
@@ -414,7 +415,7 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL avl_read_i,avl_read_sync,avl_read_sync2 : std_logic;
 	SIGNAL avl_read_pulse,avl_write_pulse : std_logic;
 	SIGNAL avl_read_sr,avl_write_sr,avl_read_clr,avl_write_clr : std_logic;
-	SIGNAL avl_rad,avl_rad_c,avl_wad : natural RANGE 0 TO 2*BLEN-1;
+	SIGNAL avl_rad,avl_rad_c,avl_wad : natural RANGE 0 TO O_FIFO_SIZE-1;
 	SIGNAL avl_walt,avl_wline,avl_rline : std_logic;
 	SIGNAL avl_dw,avl_dr : unsigned(N_DW-1 DOWNTO 0);
 	SIGNAL avl_wr : std_logic;
@@ -486,13 +487,13 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL o_adrs_pre : natural RANGE 0 TO 2**24-1;
 	SIGNAL o_stride : unsigned(13 DOWNTO 0);
 	SIGNAL o_adrsa,o_adrsb,o_rline : std_logic;
-	SIGNAL o_ad,o_ad1,o_ad2,o_ad3 : natural RANGE 0 TO 2*BLEN-1;
+	SIGNAL o_ad,o_ad1,o_ad2,o_ad3 : natural RANGE 0 TO O_FIFO_SIZE-1;
 	SIGNAL o_adturn : std_logic;
 	SIGNAL o_dr : unsigned(N_DW-1 DOWNTO 0);
 	SIGNAL o_shift : unsigned(0 TO N_DW+15);
 	SIGNAL o_sh,o_sh1,o_sh2,o_sh3,o_sh4 : std_logic;
 	SIGNAL o_reset_na : std_logic;
-	SIGNAL o_dpram : arr_dw(0 TO BLEN*2-1);
+	SIGNAL o_dpram : arr_dw(0 TO O_FIFO_SIZE-1);
 	ATTRIBUTE ramstyle OF o_dpram : SIGNAL IS "no_rw_check";
 	SIGNAL o_line0,o_line1,o_line2,o_line3 : arr_pix(0 TO OHRESL-1);
 	SIGNAL o_linf0,o_linf1,o_linf2,o_linf3 : arr_pix(0 TO OHRESM-1);
@@ -1741,7 +1742,7 @@ BEGIN
 						IF avl_walt='0' THEN
 							avl_rad<=0;
 						ELSE
-							avl_rad<=BLEN;
+							avl_rad<=O_FIFO_SIZE/2;
 						END IF;
 						IF avl_wline='0' THEN
 							avl_address<=std_logic_vector(
@@ -1787,14 +1788,14 @@ BEGIN
 			avl_wr<='0';
 			IF avl_readdatavalid='1' THEN
 				avl_wr<='1';
-				avl_wad<=(avl_wad+1) MOD (2*BLEN);
+				avl_wad<=(avl_wad+1) MOD O_FIFO_SIZE;
 				IF (avl_wad MOD BLEN)=BLEN-2 THEN
 					avl_readdataack<=NOT avl_readdataack;
 				END IF;
 			END IF;
 
 			IF avl_o_vs_sync='0' AND avl_o_vs='1' THEN
-				avl_wad<=2*BLEN-1;
+				avl_wad<=O_FIFO_SIZE-1;
 			END IF;
 
 			--------------------------------------------
@@ -1807,7 +1808,7 @@ BEGIN
 	avl_burstcount<=std_logic_vector(to_unsigned(BLEN,8));
 	avl_byteenable<=(OTHERS =>'1');
 
-	avl_rad_c<=(avl_rad+1) MOD (2*BLEN)
+	avl_rad_c<=(avl_rad+1) MOD O_FIFO_SIZE
 					WHEN avl_write_i='1' AND avl_waitrequest='0' ELSE avl_rad;
 
 	-----------------------------------------------------------------------------
@@ -2213,7 +2214,7 @@ BEGIN
 					IF o_bibv(0)='0' THEN
 						o_ad<=0;
 					ELSE
-						o_ad<=BLEN;
+						o_ad<=O_FIFO_SIZE/2;
 					END IF;
 
 				WHEN sSHIFT =>
@@ -2221,7 +2222,7 @@ BEGIN
 					o_sh<='1';
 					o_acpt<=(o_acpt+1) MOD 16;
 					IF shift_onext(o_acpt,o_format) THEN
-						o_ad<=(o_ad+1) MOD (2*BLEN);
+						o_ad<=(o_ad+1) MOD O_FIFO_SIZE;
 					END IF;
 					o_pshift<=o_pshift-1;
 					IF o_pshift=0 THEN
@@ -2263,7 +2264,7 @@ BEGIN
 						o_last2<=o_last1;
 
 						IF shift_onext(o_acpt,o_format) THEN
-							o_ad<=(o_ad+1) MOD (2*BLEN);
+							o_ad<=(o_ad+1) MOD O_FIFO_SIZE;
 						END IF;
 
 						IF o_adturn='1' AND (shift_onext((o_acpt+1) MOD 16,o_format)) AND
