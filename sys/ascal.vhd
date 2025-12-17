@@ -1792,10 +1792,13 @@ BEGIN
 						avl_read_i<='0';
 						avl_readack<=NOT avl_readack;
 						-- Set base address for incoming data based on current buffer
+						-- and reset avl_wad to base-1 so first write will correctly wrap to base
 						IF avl_read_buf='0' THEN
 							avl_wad_base<=0;
+							avl_wad<=(O_FIFO_SIZE/2)-1;  -- Will wrap to 0 on first write
 						ELSE
 							avl_wad_base<=O_FIFO_SIZE/2;
+							avl_wad<=O_FIFO_SIZE-1;  -- Will wrap to O_FIFO_SIZE/2 on first write
 						END IF;
 						-- Toggle buffer for next read
 						avl_read_buf<=NOT avl_read_buf;
