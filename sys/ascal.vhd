@@ -456,10 +456,10 @@ ARCHITECTURE rtl OF ascal IS
 			base := 0;
 			-- Wrap within buffer 0 (addresses 0 to O_FIFO_SIZE/2-1)
 			IF addr < O_FIFO_SIZE/2 THEN
-				RETURN (addr + 1) MOD (O_FIFO_SIZE/2);
+				RETURN base + ((addr - base + 1) MOD (O_FIFO_SIZE/2));
 			ELSE
 				-- Address is in wrong half, reset to base
-				RETURN 0;
+				RETURN base;
 			END IF;
 		ELSE
 			base := O_FIFO_SIZE/2;
