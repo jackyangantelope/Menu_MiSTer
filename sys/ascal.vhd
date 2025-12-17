@@ -446,10 +446,31 @@ ARCHITECTURE rtl OF ascal IS
 	END FUNCTION;
 	
 	-- Wrap address within half-buffer boundaries for ping-pong operation
-	-- Keeps address within the same half (0 to O_FIFO_SIZE/2-1 or O_FIFO_SIZE/2 to O_FIFO_SIZE-1)
-	FUNCTION wrap_half_buffer(addr : natural RANGE 0 TO O_FIFO_SIZE-1) RETURN natural IS
+	-- Keeps address within the correct half based on buffer indicator
+	-- If buf='0': addresses 0 to O_FIFO_SIZE/2-1 (0-1023)
+	-- If buf='1': addresses O_FIFO_SIZE/2 to O_FIFO_SIZE-1 (1024-2047)
+	FUNCTION wrap_half_buffer(addr : natural RANGE 0 TO O_FIFO_SIZE-1; buf : std_logic) RETURN natural IS
+		VARIABLE base : natural;
 	BEGIN
-		RETURN (addr/(O_FIFO_SIZE/2))*(O_FIFO_SIZE/2) + ((addr MOD (O_FIFO_SIZE/2))+1) MOD (O_FIFO_SIZE/2);
+		IF buf = '0' THEN
+			base := 0;
+			-- Wrap within buffer 0 (addresses 0 to O_FIFO_SIZE/2-1)
+			IF addr < O_FIFO_SIZE/2 THEN
+				RETURN base + ((addr - base + 1) MOD (O_FIFO_SIZE/2));
+			ELSE
+				-- Address is in wrong half, reset to base
+				RETURN base;
+			END IF;
+		ELSE
+			base := O_FIFO_SIZE/2;
+			-- Wrap within buffer 1 (addresses O_FIFO_SIZE/2 to O_FIFO_SIZE-1)
+			IF addr >= O_FIFO_SIZE/2 THEN
+				RETURN base + ((addr - base + 1) MOD (O_FIFO_SIZE/2));
+			ELSE
+				-- Address is in wrong half, reset to base
+				RETURN base;
+			END IF;
+		END IF;
 	END FUNCTION;
 
 	----------------------------------------------------------
@@ -2059,10 +2080,9 @@ BEGIN
 			o_readdataack<=o_readdataack_sync XOR o_readdataack_sync2;
 
 			-- Synchronize read buffer from Avalon domain (avl_clk to o_clk)
-			-- o_read_buf provides synchronized copy of avl_read_buf for monitoring;
-			-- o_bibu independently tracks buffer state and toggles when reads complete
-			-- NOTE: o_read_buf is intentionally unused in logic - reserved for future
-			-- debugging or sanity checking if buffer tracking diverges
+			-- o_read_buf provides synchronized copy of avl_read_buf indicating which
+			-- half-buffer is currently being written by Avalon, so output side reads
+			-- from the opposite buffer to avoid read/write conflicts
 			o_read_buf_sync<=avl_read_buf; -- Asynchronous clock domain crossing
 			o_read_buf_sync2<=o_read_buf_sync; -- Second stage of synchronizer
 			o_read_buf<=o_read_buf_sync2; -- Synchronized output
@@ -2256,10 +2276,12 @@ BEGIN
 						o_last<='0';
 					END IF;
 
-					IF o_bibv(0)='0' THEN
-						o_ad<=0;
+					-- Initialize o_ad to start of correct half-buffer based on synchronized o_read_buf
+					-- Read from the buffer that Avalon is NOT currently writing to
+					IF o_read_buf='0' THEN
+						o_ad<=O_FIFO_SIZE/2; -- Avalon writing to buffer 0, read from buffer 1
 					ELSE
-						o_ad<=O_FIFO_SIZE/2;
+						o_ad<=0; -- Avalon writing to buffer 1, read from buffer 0
 					END IF;
 
 				WHEN sSHIFT =>
@@ -2267,8 +2289,10 @@ BEGIN
 					o_sh<='1';
 					o_acpt<=(o_acpt+1) MOD 16;
 					IF shift_onext(o_acpt,o_format) THEN
-						-- Wrap within half-buffer boundaries (0-1023 or 1024-2047)
-						o_ad<=wrap_half_buffer(o_ad);
+						-- Wrap within correct half-buffer based on synchronized buffer indicator
+						-- Use NOT o_read_buf because we read from opposite buffer of what Avalon writes
+						-- (if Avalon writes to buffer 0, we read from buffer 1, and vice versa)
+						o_ad<=wrap_half_buffer(o_ad, NOT o_read_buf);
 					END IF;
 					o_pshift<=o_pshift-1;
 					IF o_pshift=0 THEN
@@ -2310,8 +2334,10 @@ BEGIN
 						o_last2<=o_last1;
 
 						IF shift_onext(o_acpt,o_format) THEN
-							-- Wrap within half-buffer boundaries (0-1023 or 1024-2047)
-							o_ad<=wrap_half_buffer(o_ad);
+							-- Wrap within correct half-buffer based on synchronized buffer indicator
+							-- Use NOT o_read_buf because we read from opposite buffer of what Avalon writes
+							-- (if Avalon writes to buffer 0, we read from buffer 1, and vice versa)
+							o_ad<=wrap_half_buffer(o_ad, NOT o_read_buf);
 						END IF;
 
 						IF o_adturn='1' AND (shift_onext((o_acpt+1) MOD 16,o_format)) AND
