@@ -451,25 +451,26 @@ ARCHITECTURE rtl OF ascal IS
 	-- If buf='1': addresses O_FIFO_SIZE/2 to O_FIFO_SIZE-1 (1024-2047)
 	FUNCTION wrap_half_buffer(addr : natural RANGE 0 TO O_FIFO_SIZE-1; buf : std_logic) RETURN natural IS
 		VARIABLE base : natural;
-		VARIABLE offset : natural;
 	BEGIN
 		IF buf = '0' THEN
 			base := 0;
+			-- Wrap within buffer 0 (addresses 0 to O_FIFO_SIZE/2-1)
+			IF addr < O_FIFO_SIZE/2 THEN
+				RETURN (addr + 1) MOD (O_FIFO_SIZE/2);
+			ELSE
+				-- Address is in wrong half, reset to base
+				RETURN 0;
+			END IF;
 		ELSE
 			base := O_FIFO_SIZE/2;
+			-- Wrap within buffer 1 (addresses O_FIFO_SIZE/2 to O_FIFO_SIZE-1)
+			IF addr >= O_FIFO_SIZE/2 THEN
+				RETURN base + ((addr - base + 1) MOD (O_FIFO_SIZE/2));
+			ELSE
+				-- Address is in wrong half, reset to base
+				RETURN base;
+			END IF;
 		END IF;
-		-- Ensure address is within expected range before calculating offset
-		-- If address is already in the correct half, just increment and wrap
-		-- If address has drifted to wrong half, force it back to correct half base
-		IF (buf = '0' AND addr < O_FIFO_SIZE/2) OR 
-		   (buf = '1' AND addr >= O_FIFO_SIZE/2) THEN
-			-- Address is in correct half-buffer, increment and wrap within bounds
-			offset := ((addr - base) + 1) MOD (O_FIFO_SIZE/2);
-		ELSE
-			-- Address is in wrong half-buffer, reset to base (safety)
-			offset := 0;
-		END IF;
-		RETURN base + offset;
 	END FUNCTION;
 
 	----------------------------------------------------------
