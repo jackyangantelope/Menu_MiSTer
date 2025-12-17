@@ -546,6 +546,7 @@ ARCHITECTURE rtl OF ascal IS
 	TYPE arr_uint4 IS ARRAY (natural RANGE <>) OF natural RANGE 0 TO 15;
 	SIGNAL o_off : arr_uint4(0 TO 2);
 	SIGNAL o_bibu : std_logic :='0';
+	SIGNAL o_read_buf_sync, o_read_buf_sync2, o_read_buf : std_logic; -- Synchronized avl_read_buf
 	SIGNAL o_dcptv : arr_uint12(13 TO 14);
 	SIGNAL o_dcpt_clr, o_dcpt_inc : std_logic;
 	SIGNAL o_dcptv_clr, o_dcptv_inc : std_logic_vector(1 TO 12);
@@ -2057,6 +2058,15 @@ BEGIN
 			o_readdataack_sync2<=o_readdataack_sync;
 			o_readdataack<=o_readdataack_sync XOR o_readdataack_sync2;
 
+			-- Synchronize read buffer from Avalon domain (avl_clk to o_clk)
+			-- o_read_buf provides synchronized copy of avl_read_buf for monitoring;
+			-- o_bibu independently tracks buffer state and toggles when reads complete
+			-- NOTE: o_read_buf is intentionally unused in logic - reserved for future
+			-- debugging or sanity checking if buffer tracking diverges
+			o_read_buf_sync<=avl_read_buf; -- Asynchronous clock domain crossing
+			o_read_buf_sync2<=o_read_buf_sync; -- Second stage of synchronizer
+			o_read_buf<=o_read_buf_sync2; -- Synchronized output
+
 			------------------------------------------------------
 			lev_inc_v:='0';
 			lev_dec_v:='0';
@@ -2145,7 +2155,7 @@ BEGIN
 						lev_inc_v:='1';
 						o_read_pre<=NOT o_read_pre;
 						o_state <=sWAITREAD;
-						o_bibu<=NOT o_bibu;
+						-- Don't toggle o_bibu locally - will be updated when read is acknowledged
 					END IF;
 					prim_v:=to_std_logic(o_hbcpt=0);
 					last_v:=to_std_logic(o_hbcpt=o_hburst-1);
@@ -2158,6 +2168,12 @@ BEGIN
 
 				WHEN sWAITREAD =>
 					IF o_readack='1' THEN
+						-- Toggle buffer to maintain synchronization with Avalon side
+						-- avl_read_buf was toggled when Avalon accepted the read request,
+						-- so toggle o_bibu now that the read is acknowledged
+						-- This toggle and state transition occur on same clock edge;
+						-- bib_v capture happens next cycle when re-entering sREAD state
+						o_bibu<=NOT o_bibu;
 						o_hbcpt<=o_hbcpt+1;
 						IF o_hbcpt<o_hburst-1 THEN
 							-- If not finshed line, read more
