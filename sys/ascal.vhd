@@ -1834,10 +1834,10 @@ BEGIN
 	avl_burstcount<=std_logic_vector(to_unsigned(BLEN,8));
 	avl_byteenable<=(OTHERS =>'1');
 
-	-- Wrap within half-buffer boundaries for ping-pong operation
-	-- Keep address within the same half (0-1023 or 1024-2047)
-	avl_rad_c<=wrap_half_buffer(avl_rad)
-					WHEN avl_write_i='1' AND avl_waitrequest='0' ELSE avl_rad;
+	-- Map avl_rad to i_dpram address space (0 to BLEN*2-1)
+	-- avl_rad increments from 0 or O_FIFO_SIZE/2, but i_dpram is only BLEN*2 entries
+	avl_rad_c<=((avl_rad MOD (BLEN*2)) + 1) MOD (BLEN*2)
+					WHEN avl_write_i='1' AND avl_waitrequest='0' ELSE avl_rad MOD (BLEN*2);
 
 	-----------------------------------------------------------------------------
 	-- DPRAM Output. Double buffer for RAM bursts.
