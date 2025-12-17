@@ -325,7 +325,7 @@ ARCHITECTURE rtl OF ascal IS
 	CONSTANT NB_BURST : natural :=ilog2(N_BURST);
 	CONSTANT NB_LA    : natural :=ilog2(N_DW/8); -- Low address bits
 	CONSTANT BLEN     : natural :=N_BURST / N_DW * 8; -- Burst length
-	CONSTANT O_FIFO_SIZE : natural := 2048; -- Large circular FIFO size (32KB for 128-bit width)
+	CONSTANT O_FIFO_SIZE : natural := 2048; -- Large circular FIFO (32KB for 128-bit width)
 
 	----------------------------------------------------------
 	TYPE arr_dw IS  ARRAY (natural RANGE <>) OF unsigned(N_DW-1 DOWNTO 0);
@@ -415,7 +415,8 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL avl_read_i,avl_read_sync,avl_read_sync2 : std_logic;
 	SIGNAL avl_read_pulse,avl_write_pulse : std_logic;
 	SIGNAL avl_read_sr,avl_write_sr,avl_read_clr,avl_write_clr : std_logic;
-	SIGNAL avl_rad,avl_rad_c,avl_wad : natural RANGE 0 TO O_FIFO_SIZE-1;
+	SIGNAL avl_rad,avl_rad_c : natural RANGE 0 TO 2*BLEN-1;
+	SIGNAL avl_wad : natural RANGE 0 TO O_FIFO_SIZE-1;
 	SIGNAL avl_walt,avl_wline,avl_rline : std_logic;
 	SIGNAL avl_dw,avl_dr : unsigned(N_DW-1 DOWNTO 0);
 	SIGNAL avl_wr : std_logic;
@@ -441,13 +442,6 @@ ARCHITECTURE rtl OF ascal IS
 		IF b=1 THEN RETURN base+size; END IF;
 		IF b=2 THEN RETURN base+(size(30 DOWNTO 0) & '0'); END IF;
 		RETURN base;
-	END FUNCTION;
-	
-	-- Simple circular FIFO wrap function
-	-- Wraps address within full O_FIFO_SIZE range (0 to O_FIFO_SIZE-1)
-	FUNCTION wrap_fifo_addr(addr : natural RANGE 0 TO O_FIFO_SIZE-1) RETURN natural IS
-	BEGIN
-		RETURN (addr + 1) MOD O_FIFO_SIZE;
 	END FUNCTION;
 
 	----------------------------------------------------------
@@ -1659,8 +1653,7 @@ BEGIN
 		END IF;
 	END PROCESS;
 
-	-- Map avl_rad_c (0-2047) to i_dpram address space (0-31)
-	avl_dr<=i_dpram(avl_rad_c MOD (BLEN*2)) WHEN rising_edge(avl_clk);
+	avl_dr<=i_dpram(avl_rad_c) WHEN rising_edge(avl_clk);
 
 	-- Line buffer for downscaling with interpolation
 	DownLine:IF DOWNSCALE GENERATE
@@ -1747,7 +1740,6 @@ BEGIN
 					IF avl_write_sr='1' THEN
 						avl_state<=sWRITE;
 						avl_write_clr<='1';
-						-- Simple alternation between two halves of FIFO for write bursts
 						IF avl_walt='0' THEN
 							avl_rad<=0;
 						ELSE
@@ -1789,8 +1781,6 @@ BEGIN
 						avl_state<=sIDLE;
 						avl_read_i<='0';
 						avl_readack<=NOT avl_readack;
-						-- Reset avl_wad to -1 so first write will wrap to 0
-						avl_wad<=O_FIFO_SIZE-1;
 					END IF;
 			END CASE;
 
@@ -1799,15 +1789,13 @@ BEGIN
 			avl_wr<='0';
 			IF avl_readdatavalid='1' THEN
 				avl_wr<='1';
-				-- Simple circular FIFO wrap
-				avl_wad<=(avl_wad + 1) MOD O_FIFO_SIZE;
+				avl_wad<=(avl_wad+1) MOD O_FIFO_SIZE;
 				IF (avl_wad MOD BLEN)=BLEN-2 THEN
 					avl_readdataack<=NOT avl_readdataack;
 				END IF;
 			END IF;
 
 			IF avl_o_vs_sync='0' AND avl_o_vs='1' THEN
-				-- Reset to -1 so first write will set to 0
 				avl_wad<=O_FIFO_SIZE-1;
 			END IF;
 
@@ -1821,9 +1809,7 @@ BEGIN
 	avl_burstcount<=std_logic_vector(to_unsigned(BLEN,8));
 	avl_byteenable<=(OTHERS =>'1');
 
-	-- Increment avl_rad for next read from i_dpram
-	-- avl_rad stays in full range (0-2047) to track buffer state
-	avl_rad_c<=(avl_rad + 1) MOD O_FIFO_SIZE
+	avl_rad_c<=(avl_rad+1) MOD (2*BLEN)
 					WHEN avl_write_i='1' AND avl_waitrequest='0' ELSE avl_rad;
 
 	-----------------------------------------------------------------------------
@@ -2131,7 +2117,7 @@ BEGIN
 						lev_inc_v:='1';
 						o_read_pre<=NOT o_read_pre;
 						o_state <=sWAITREAD;
-						-- Don't toggle o_bibu locally - will be updated when read is acknowledged
+						o_bibu<=NOT o_bibu;
 					END IF;
 					prim_v:=to_std_logic(o_hbcpt=0);
 					last_v:=to_std_logic(o_hbcpt=o_hburst-1);
@@ -2144,11 +2130,6 @@ BEGIN
 
 				WHEN sWAITREAD =>
 					IF o_readack='1' THEN
-						-- Toggle buffer to maintain DDR frame buffer synchronization
-						-- o_bibu tracks which frame buffer is being read for interlacing/bob deinterlacing
-						-- This toggle and state transition occur on same clock edge;
-						-- bib_v capture happens next cycle when re-entering sREAD state
-						o_bibu<=NOT o_bibu;
 						o_hbcpt<=o_hbcpt+1;
 						IF o_hbcpt<o_hburst-1 THEN
 							-- If not finshed line, read more
@@ -2231,16 +2212,18 @@ BEGIN
 						o_last<='0';
 					END IF;
 
-					-- Initialize o_ad to start of circular FIFO (simple sequential read)
-					o_ad<=0;
+					IF o_bibv(0)='0' THEN
+						o_ad<=0;
+					ELSE
+						o_ad<=O_FIFO_SIZE/2;
+					END IF;
 
 				WHEN sSHIFT =>
 					o_hacpt<=o_hacpt+1;
 					o_sh<='1';
 					o_acpt<=(o_acpt+1) MOD 16;
 					IF shift_onext(o_acpt,o_format) THEN
-						-- Simple circular FIFO wrap
-						o_ad<=wrap_fifo_addr(o_ad);
+						o_ad<=(o_ad+1) MOD O_FIFO_SIZE;
 					END IF;
 					o_pshift<=o_pshift-1;
 					IF o_pshift=0 THEN
@@ -2282,8 +2265,7 @@ BEGIN
 						o_last2<=o_last1;
 
 						IF shift_onext(o_acpt,o_format) THEN
-							-- Simple circular FIFO wrap
-							o_ad<=wrap_fifo_addr(o_ad);
+							o_ad<=(o_ad+1) MOD O_FIFO_SIZE;
 						END IF;
 
 						IF o_adturn='1' AND (shift_onext((o_acpt+1) MOD 16,o_format)) AND
