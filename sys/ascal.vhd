@@ -420,6 +420,8 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL avl_dw,avl_dr : unsigned(N_DW-1 DOWNTO 0);
 	SIGNAL avl_wr : std_logic;
 	SIGNAL avl_readdataack,avl_readack : std_logic;
+	SIGNAL avl_read_buf : std_logic; -- Tracks which half-buffer for current read
+	SIGNAL avl_wad_base : natural RANGE 0 TO O_FIFO_SIZE-1; -- Base address for current half
 	SIGNAL avl_radrs,avl_wadrs : unsigned(31 DOWNTO 0);
 	SIGNAL avl_i_offset0,avl_o_offset0 : unsigned(31 DOWNTO 0);
 	SIGNAL avl_i_offset1,avl_o_offset1 : unsigned(31 DOWNTO 0);
@@ -1680,6 +1682,8 @@ BEGIN
 			avl_read_sr<='0';
 			avl_readdataack<='0';
 			avl_readack<='0';
+			avl_read_buf<='0';
+			avl_wad_base<=0;
 
 		ELSIF rising_edge(avl_clk) THEN
 			----------------------------------
@@ -1780,6 +1784,14 @@ BEGIN
 						avl_state<=sIDLE;
 						avl_read_i<='0';
 						avl_readack<=NOT avl_readack;
+						-- Toggle buffer for next read
+						avl_read_buf<=NOT avl_read_buf;
+						-- Set base address for incoming data based on current buffer
+						IF avl_read_buf='0' THEN
+							avl_wad_base<=0;
+						ELSE
+							avl_wad_base<=O_FIFO_SIZE/2;
+						END IF;
 					END IF;
 			END CASE;
 
@@ -1788,7 +1800,8 @@ BEGIN
 			avl_wr<='0';
 			IF avl_readdatavalid='1' THEN
 				avl_wr<='1';
-				avl_wad<=(avl_wad+1) MOD O_FIFO_SIZE;
+				-- Wrap within the half-buffer determined by avl_wad_base
+				avl_wad<=avl_wad_base + ((avl_wad - avl_wad_base + 1) MOD (O_FIFO_SIZE/2));
 				IF (avl_wad MOD BLEN)=BLEN-2 THEN
 					avl_readdataack<=NOT avl_readdataack;
 				END IF;
@@ -1796,6 +1809,8 @@ BEGIN
 
 			IF avl_o_vs_sync='0' AND avl_o_vs='1' THEN
 				avl_wad<=O_FIFO_SIZE-1;
+				avl_read_buf<='0';
+				avl_wad_base<=0;
 			END IF;
 
 			--------------------------------------------
@@ -1808,7 +1823,9 @@ BEGIN
 	avl_burstcount<=std_logic_vector(to_unsigned(BLEN,8));
 	avl_byteenable<=(OTHERS =>'1');
 
-	avl_rad_c<=(avl_rad+1) MOD O_FIFO_SIZE
+	-- Wrap within half-buffer boundaries for ping-pong operation
+	-- Keep address within the same half (0-1023 or 1024-2047)
+	avl_rad_c<=(avl_rad/1024)*1024 + ((avl_rad MOD 1024)+1) MOD 1024
 					WHEN avl_write_i='1' AND avl_waitrequest='0' ELSE avl_rad;
 
 	-----------------------------------------------------------------------------
@@ -2222,7 +2239,8 @@ BEGIN
 					o_sh<='1';
 					o_acpt<=(o_acpt+1) MOD 16;
 					IF shift_onext(o_acpt,o_format) THEN
-						o_ad<=(o_ad+1) MOD O_FIFO_SIZE;
+						-- Wrap within half-buffer boundaries (0-1023 or 1024-2047)
+						o_ad<=(o_ad/1024)*1024 + ((o_ad MOD 1024)+1) MOD 1024;
 					END IF;
 					o_pshift<=o_pshift-1;
 					IF o_pshift=0 THEN
@@ -2264,7 +2282,8 @@ BEGIN
 						o_last2<=o_last1;
 
 						IF shift_onext(o_acpt,o_format) THEN
-							o_ad<=(o_ad+1) MOD O_FIFO_SIZE;
+							-- Wrap within half-buffer boundaries (0-1023 or 1024-2047)
+							o_ad<=(o_ad/1024)*1024 + ((o_ad MOD 1024)+1) MOD 1024;
 						END IF;
 
 						IF o_adturn='1' AND (shift_onext((o_acpt+1) MOD 16,o_format)) AND
