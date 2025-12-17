@@ -458,8 +458,17 @@ ARCHITECTURE rtl OF ascal IS
 		ELSE
 			base := O_FIFO_SIZE/2;
 		END IF;
-		-- Calculate offset from base and wrap within half-buffer size
-		offset := (addr - base + 1) MOD (O_FIFO_SIZE/2);
+		-- Ensure address is within expected range before calculating offset
+		-- If address is already in the correct half, just increment and wrap
+		-- If address has drifted to wrong half, force it back to correct half base
+		IF (buf = '0' AND addr < O_FIFO_SIZE/2) OR 
+		   (buf = '1' AND addr >= O_FIFO_SIZE/2) THEN
+			-- Address is in correct half-buffer, increment and wrap within bounds
+			offset := ((addr - base) + 1) MOD (O_FIFO_SIZE/2);
+		ELSE
+			-- Address is in wrong half-buffer, reset to base (safety)
+			offset := 0;
+		END IF;
 		RETURN base + offset;
 	END FUNCTION;
 
