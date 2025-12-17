@@ -1784,14 +1784,14 @@ BEGIN
 						avl_state<=sIDLE;
 						avl_read_i<='0';
 						avl_readack<=NOT avl_readack;
-						-- Toggle buffer for next read
-						avl_read_buf<=NOT avl_read_buf;
 						-- Set base address for incoming data based on current buffer
 						IF avl_read_buf='0' THEN
 							avl_wad_base<=0;
 						ELSE
 							avl_wad_base<=O_FIFO_SIZE/2;
 						END IF;
+						-- Toggle buffer for next read
+						avl_read_buf<=NOT avl_read_buf;
 					END IF;
 			END CASE;
 
