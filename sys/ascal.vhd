@@ -444,6 +444,13 @@ ARCHITECTURE rtl OF ascal IS
 		IF b=2 THEN RETURN base+(size(30 DOWNTO 0) & '0'); END IF;
 		RETURN base;
 	END FUNCTION;
+	
+	-- Wrap address within half-buffer boundaries for ping-pong operation
+	-- Keeps address within the same half (0 to O_FIFO_SIZE/2-1 or O_FIFO_SIZE/2 to O_FIFO_SIZE-1)
+	FUNCTION wrap_half_buffer(addr : natural RANGE 0 TO O_FIFO_SIZE-1) RETURN natural IS
+	BEGIN
+		RETURN (addr/(O_FIFO_SIZE/2))*(O_FIFO_SIZE/2) + ((addr MOD (O_FIFO_SIZE/2))+1) MOD (O_FIFO_SIZE/2);
+	END FUNCTION;
 
 	----------------------------------------------------------
 	-- Output
@@ -1808,7 +1815,8 @@ BEGIN
 			END IF;
 
 			IF avl_o_vs_sync='0' AND avl_o_vs='1' THEN
-				avl_wad<=O_FIFO_SIZE-1;
+				-- Reset to base-1 so first write will set to base (0)
+				avl_wad<=(O_FIFO_SIZE/2)-1;
 				avl_read_buf<='0';
 				avl_wad_base<=0;
 			END IF;
@@ -1825,7 +1833,7 @@ BEGIN
 
 	-- Wrap within half-buffer boundaries for ping-pong operation
 	-- Keep address within the same half (0-1023 or 1024-2047)
-	avl_rad_c<=(avl_rad/(O_FIFO_SIZE/2))*(O_FIFO_SIZE/2) + ((avl_rad MOD (O_FIFO_SIZE/2))+1) MOD (O_FIFO_SIZE/2)
+	avl_rad_c<=wrap_half_buffer(avl_rad)
 					WHEN avl_write_i='1' AND avl_waitrequest='0' ELSE avl_rad;
 
 	-----------------------------------------------------------------------------
@@ -2240,7 +2248,7 @@ BEGIN
 					o_acpt<=(o_acpt+1) MOD 16;
 					IF shift_onext(o_acpt,o_format) THEN
 						-- Wrap within half-buffer boundaries (0-1023 or 1024-2047)
-						o_ad<=(o_ad/(O_FIFO_SIZE/2))*(O_FIFO_SIZE/2) + ((o_ad MOD (O_FIFO_SIZE/2))+1) MOD (O_FIFO_SIZE/2);
+						o_ad<=wrap_half_buffer(o_ad);
 					END IF;
 					o_pshift<=o_pshift-1;
 					IF o_pshift=0 THEN
@@ -2283,7 +2291,7 @@ BEGIN
 
 						IF shift_onext(o_acpt,o_format) THEN
 							-- Wrap within half-buffer boundaries (0-1023 or 1024-2047)
-							o_ad<=(o_ad/(O_FIFO_SIZE/2))*(O_FIFO_SIZE/2) + ((o_ad MOD (O_FIFO_SIZE/2))+1) MOD (O_FIFO_SIZE/2);
+							o_ad<=wrap_half_buffer(o_ad);
 						END IF;
 
 						IF o_adturn='1' AND (shift_onext((o_acpt+1) MOD 16,o_format)) AND
