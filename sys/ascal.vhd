@@ -2058,10 +2058,12 @@ BEGIN
 			o_readdataack_sync2<=o_readdataack_sync;
 			o_readdataack<=o_readdataack_sync XOR o_readdataack_sync2;
 
-			-- Synchronize read buffer from Avalon domain
-			o_read_buf_sync<=avl_read_buf; -- <ASYNC>
-			o_read_buf_sync2<=o_read_buf_sync;
-			o_read_buf<=o_read_buf_sync2;
+			-- Synchronize read buffer from Avalon domain (avl_clk to o_clk)
+			-- o_read_buf provides synchronized copy of avl_read_buf for monitoring;
+			-- o_bibu independently tracks buffer state and toggles when reads complete
+			o_read_buf_sync<=avl_read_buf; -- Asynchronous clock domain crossing
+			o_read_buf_sync2<=o_read_buf_sync; -- Second stage of synchronizer
+			o_read_buf<=o_read_buf_sync2; -- Synchronized output
 
 			------------------------------------------------------
 			lev_inc_v:='0';
@@ -2164,9 +2166,9 @@ BEGIN
 
 				WHEN sWAITREAD =>
 					IF o_readack='1' THEN
-						-- Toggle buffer to stay in sync with Avalon side
-						-- The Avalon side toggled avl_read_buf when it accepted this read,
-						-- so we toggle o_bibu now to match
+						-- Toggle buffer to maintain synchronization with Avalon side
+						-- avl_read_buf was toggled when Avalon accepted the read request,
+						-- so toggle o_bibu now that the read is acknowledged
 						o_bibu<=NOT o_bibu;
 						o_hbcpt<=o_hbcpt+1;
 						IF o_hbcpt<o_hburst-1 THEN
