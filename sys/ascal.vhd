@@ -2061,6 +2061,8 @@ BEGIN
 			-- Synchronize read buffer from Avalon domain (avl_clk to o_clk)
 			-- o_read_buf provides synchronized copy of avl_read_buf for monitoring;
 			-- o_bibu independently tracks buffer state and toggles when reads complete
+			-- NOTE: o_read_buf is intentionally unused in logic - reserved for future
+			-- debugging or sanity checking if buffer tracking diverges
 			o_read_buf_sync<=avl_read_buf; -- Asynchronous clock domain crossing
 			o_read_buf_sync2<=o_read_buf_sync; -- Second stage of synchronizer
 			o_read_buf<=o_read_buf_sync2; -- Synchronized output
@@ -2169,6 +2171,8 @@ BEGIN
 						-- Toggle buffer to maintain synchronization with Avalon side
 						-- avl_read_buf was toggled when Avalon accepted the read request,
 						-- so toggle o_bibu now that the read is acknowledged
+						-- This toggle and state transition occur on same clock edge;
+						-- bib_v capture happens next cycle when re-entering sREAD state
 						o_bibu<=NOT o_bibu;
 						o_hbcpt<=o_hbcpt+1;
 						IF o_hbcpt<o_hburst-1 THEN
