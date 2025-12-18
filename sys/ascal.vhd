@@ -338,6 +338,7 @@ ARCHITECTURE rtl OF ascal IS
 	TYPE arr_pix IS ARRAY (natural RANGE <>) OF type_pix;
 	TYPE arr_pixq IS ARRAY(natural RANGE <>) OF arr_pix(0 TO 3);
 	ATTRIBUTE ramstyle : string;
+	ATTRIBUTE ASYNC_REG : string; -- For CDC synchronizers
 
 	SUBTYPE uint12 IS natural RANGE 0 TO 4095;
 	SUBTYPE uint13 IS natural RANGE 0 TO 8191;
@@ -422,6 +423,8 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL avl_walt,avl_wline,avl_rline : std_logic;
 	-- Cross-clock synchronization for write pointer
 	SIGNAL o_avl_wad_sync1, o_avl_wad_sync2 : natural RANGE 0 TO O_FIFO_SIZE-1;
+	ATTRIBUTE ASYNC_REG OF o_avl_wad_sync1 : SIGNAL IS "TRUE";
+	ATTRIBUTE ASYNC_REG OF o_avl_wad_sync2 : SIGNAL IS "TRUE";
 	SIGNAL avl_dw,avl_dr : unsigned(N_DW-1 DOWNTO 0);
 	SIGNAL avl_wr : std_logic;
 	SIGNAL avl_readdataack,avl_readack : std_logic;
@@ -1888,9 +1891,11 @@ BEGIN
 
 		ELSIF rising_edge(o_clk) THEN
 			------------------------------------------------------
-			-- Cross-clock synchronization of write pointer from avl_clk
-			-- Two-stage synchronizer for CDC safety
+			-- Cross-clock synchronization of write pointer from avl_clk to o_clk
+			-- Standard two-stage CDC synchronizer with ASYNC_REG attributes
+			-- Stage 1: May enter metastable state when crossing domains
 			o_avl_wad_sync1 <= avl_wad; -- <ASYNC>
+			-- Stage 2: Resolves metastability, safe to use
 			o_avl_wad_sync2 <= o_avl_wad_sync1;
 			
 			------------------------------------------------------
