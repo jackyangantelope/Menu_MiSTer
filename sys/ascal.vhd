@@ -325,7 +325,9 @@ ARCHITECTURE rtl OF ascal IS
 	CONSTANT NB_BURST : natural :=ilog2(N_BURST);
 	CONSTANT NB_LA    : natural :=ilog2(N_DW/8); -- Low address bits
 	CONSTANT BLEN     : natural :=N_BURST / N_DW * 8; -- Burst length
-	CONSTANT O_FIFO_SIZE : natural := 2048; -- Large circular FIFO (32KB for 128-bit width)
+	-- Linear circular FIFO: 2048 entries * 16 bytes = 32KB
+	-- All address math is linear modulo O_FIFO_SIZE (no quadrant/half-buffer splits)
+	CONSTANT O_FIFO_SIZE : natural := 2048;
 
 	----------------------------------------------------------
 	TYPE arr_dw IS  ARRAY (natural RANGE <>) OF unsigned(N_DW-1 DOWNTO 0);
@@ -336,6 +338,7 @@ ARCHITECTURE rtl OF ascal IS
 	TYPE arr_pix IS ARRAY (natural RANGE <>) OF type_pix;
 	TYPE arr_pixq IS ARRAY(natural RANGE <>) OF arr_pix(0 TO 3);
 	ATTRIBUTE ramstyle : string;
+	ATTRIBUTE ASYNC_REG : string; -- For CDC synchronizers
 
 	SUBTYPE uint12 IS natural RANGE 0 TO 4095;
 	SUBTYPE uint13 IS natural RANGE 0 TO 8191;
@@ -418,6 +421,10 @@ ARCHITECTURE rtl OF ascal IS
 	SIGNAL avl_rad,avl_rad_c : natural RANGE 0 TO 2*BLEN-1;
 	SIGNAL avl_wad : natural RANGE 0 TO O_FIFO_SIZE-1;
 	SIGNAL avl_walt,avl_wline,avl_rline : std_logic;
+	-- Cross-clock synchronization for write pointer
+	SIGNAL o_avl_wad_sync1, o_avl_wad_sync2 : natural RANGE 0 TO O_FIFO_SIZE-1;
+	ATTRIBUTE ASYNC_REG OF o_avl_wad_sync1 : SIGNAL IS "TRUE";
+	ATTRIBUTE ASYNC_REG OF o_avl_wad_sync2 : SIGNAL IS "TRUE";
 	SIGNAL avl_dw,avl_dr : unsigned(N_DW-1 DOWNTO 0);
 	SIGNAL avl_wr : std_logic;
 	SIGNAL avl_readdataack,avl_readack : std_logic;
@@ -1796,7 +1803,7 @@ BEGIN
 			END IF;
 
 			IF avl_o_vs_sync='0' AND avl_o_vs='1' THEN
-				avl_wad<=O_FIFO_SIZE-1;
+				avl_wad<=0;
 			END IF;
 
 			--------------------------------------------
@@ -1879,8 +1886,18 @@ BEGIN
 			o_readlev<=0;
 			o_copylev<=0;
 			o_hsp<='0';
+			o_avl_wad_sync1<=0;
+			o_avl_wad_sync2<=0;
 
 		ELSIF rising_edge(o_clk) THEN
+			------------------------------------------------------
+			-- Cross-clock synchronization of write pointer from avl_clk to o_clk
+			-- Standard two-stage CDC synchronizer with ASYNC_REG attributes
+			-- Stage 1: May enter metastable state when crossing domains
+			o_avl_wad_sync1 <= avl_wad; -- <ASYNC>
+			-- Stage 2: Resolves metastability, safe to use
+			o_avl_wad_sync2 <= o_avl_wad_sync1;
+
 			------------------------------------------------------
 			o_mode   <=mode; -- <ASYNC> ?
 			o_format <="0001" & format; -- <ASYNC> ?
@@ -2212,11 +2229,8 @@ BEGIN
 						o_last<='0';
 					END IF;
 
-					IF o_bibv(0)='0' THEN
-						o_ad<=0;
-					ELSE
-						o_ad<=O_FIFO_SIZE/2;
-					END IF;
+					-- Initialize o_ad to 0 for linear circular addressing
+					o_ad<=0;
 
 				WHEN sSHIFT =>
 					o_hacpt<=o_hacpt+1;
