@@ -1897,7 +1897,7 @@ BEGIN
 			o_avl_wad_sync1 <= avl_wad; -- <ASYNC>
 			-- Stage 2: Resolves metastability, safe to use
 			o_avl_wad_sync2 <= o_avl_wad_sync1;
-			
+
 			------------------------------------------------------
 			o_mode   <=mode; -- <ASYNC> ?
 			o_format <="0001" & format; -- <ASYNC> ?
