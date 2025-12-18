@@ -1743,7 +1743,7 @@ BEGIN
 						IF avl_walt='0' THEN
 							avl_rad<=0;
 						ELSE
-							avl_rad<=O_FIFO_SIZE/2;
+							avl_rad<=BLEN;
 						END IF;
 						IF avl_wline='0' THEN
 							avl_address<=std_logic_vector(
